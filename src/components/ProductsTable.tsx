@@ -71,7 +71,7 @@ export default function ProductsTable() {
                 <td className="py-3 text-white pr-4">{row.name}</td>
                 <td className="py-3 pr-4">
                   {row.tag
-                    ? <span className="text-[#E8521A] text-xs font-bold border border-[#E8521A] px-2 py-0.5 rounded">{row.tag}</span>
+                    ? <span className="text-[#E8521A] text-xs font-bold border border-[#E8521A] px-2 py-0.5 rounded whitespace-nowrap">{row.tag}</span>
                     : <span className="text-gray-600">—</span>
                   }
                 </td>
