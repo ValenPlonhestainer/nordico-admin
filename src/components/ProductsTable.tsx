@@ -61,7 +61,6 @@ export default function ProductsTable() {
           <thead>
             <tr className="text-gray-500 border-b border-[#2a2a2a] text-left">
               <th className="pb-2 font-medium">Producto</th>
-              <th className="pb-2 font-medium">Tag</th>
               <th className="pb-2 font-medium">Precio c/u</th>
             </tr>
           </thead>
@@ -69,12 +68,6 @@ export default function ProductsTable() {
             {rows.map(row => (
               <tr key={row.key} className="border-b border-[#1e1e1e]">
                 <td className="py-3 text-white pr-4">{row.name}</td>
-                <td className="py-3 pr-4">
-                  {row.tag
-                    ? <span className="text-[#E8521A] text-xs font-bold border border-[#E8521A] px-2 py-0.5 rounded whitespace-nowrap">{row.tag}</span>
-                    : <span className="text-gray-600">—</span>
-                  }
-                </td>
                 <td className="py-3">
                   <PriceInput
                     value={row.price_unit}
