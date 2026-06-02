@@ -1,5 +1,6 @@
 import LoginGate from './components/LoginGate'
 import ProductsTable from './components/ProductsTable'
+import BaldosasTable from './components/BaldosasTable'
 import ServicesTable from './components/ServicesTable'
 import { supabase } from './lib/supabaseClient'
 
@@ -26,6 +27,10 @@ export default function App() {
           <div className="w-full max-w-3xl space-y-6">
             <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
               <ProductsTable />
+            </div>
+
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
+              <BaldosasTable />
             </div>
 
             <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
