@@ -1,10 +1,57 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import type { Product } from '../types'
 import PriceInput from './PriceInput'
 
 function toKey(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
+}
+
+function ImageUploadSlot({
+  label,
+  file,
+  onChange,
+}: {
+  label: string
+  file: File | null
+  onChange: (f: File | null) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <div className="flex-1">
+      <p className="text-gray-500 text-xs mb-1">{label}</p>
+      <div
+        onClick={() => ref.current?.click()}
+        className="relative border border-dashed border-[#333] hover:border-[#E8521A] rounded cursor-pointer transition-colors h-24 flex items-center justify-center bg-[#0f0f0f] overflow-hidden"
+      >
+        {file ? (
+          <>
+            <img
+              src={URL.createObjectURL(file)}
+              alt={label}
+              className="h-full w-full object-contain"
+            />
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onChange(null) }}
+              className="absolute top-1 right-1 bg-black/70 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center hover:bg-black"
+            >
+              ×
+            </button>
+          </>
+        ) : (
+          <span className="text-gray-600 text-xs text-center px-2">Hacé clic para subir imagen</span>
+        )}
+        <input
+          ref={ref}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={e => onChange(e.target.files?.[0] ?? null)}
+        />
+      </div>
+    </div>
+  )
 }
 
 export default function ProductsTable() {
@@ -14,11 +61,13 @@ export default function ProductsTable() {
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState(false)
 
-  const [showForm, setShowForm]     = useState(false)
-  const [newName, setNewName]       = useState('')
-  const [newPrice, setNewPrice]     = useState<number>(0)
-  const [adding, setAdding]         = useState(false)
-  const [addError, setAddError]     = useState('')
+  const [showForm, setShowForm]   = useState(false)
+  const [newName, setNewName]     = useState('')
+  const [newPrice, setNewPrice]   = useState<number>(0)
+  const [img1, setImg1]           = useState<File | null>(null)
+  const [img2, setImg2]           = useState<File | null>(null)
+  const [adding, setAdding]       = useState(false)
+  const [addError, setAddError]   = useState('')
 
   useEffect(() => {
     supabase
@@ -57,6 +106,17 @@ export default function ProductsTable() {
     }
   }
 
+  const uploadImage = async (file: File, key: string, slot: 1 | 2): Promise<string | null> => {
+    const ext = file.name.split('.').pop()
+    const path = `${key}-${slot}.${ext}`
+    const { error } = await supabase.storage
+      .from('product-images')
+      .upload(path, file, { upsert: true })
+    if (error) return null
+    const { data } = supabase.storage.from('product-images').getPublicUrl(path)
+    return data.publicUrl
+  }
+
   const addProduct = async () => {
     setAddError('')
     const name = newName.trim().toUpperCase()
@@ -69,22 +129,46 @@ export default function ProductsTable() {
     const nextOrder = rows.length > 0 ? Math.max(...rows.map(r => r.order)) + 1 : 1
 
     setAdding(true)
+
+    const imageUrls: string[] = []
+    if (img1) {
+      const url = await uploadImage(img1, key, 1)
+      if (!url) { setAdding(false); return setAddError('Error al subir la imagen 1.') }
+      imageUrls.push(url)
+    }
+    if (img2) {
+      const url = await uploadImage(img2, key, 2)
+      if (!url) { setAdding(false); return setAddError('Error al subir la imagen 2.') }
+      imageUrls.push(url)
+    }
+
     const { data, error } = await supabase
       .from('products')
-      .insert({ key, name, price_unit: newPrice, order: nextOrder, tag: null })
+      .insert({ key, name, price_unit: newPrice, order: nextOrder, tag: null, images: imageUrls })
       .select()
       .single()
 
     setAdding(false)
     if (error || !data) {
-      setAddError('No se pudo agregar el producto. Intentá de nuevo.')
+      setAddError(error?.message ?? 'No se pudo agregar el producto. Intentá de nuevo.')
       return
     }
 
     setRows(prev => [...prev, data])
     setNewName('')
     setNewPrice(0)
+    setImg1(null)
+    setImg2(null)
     setShowForm(false)
+  }
+
+  const resetForm = () => {
+    setShowForm(false)
+    setNewName('')
+    setNewPrice(0)
+    setImg1(null)
+    setImg2(null)
+    setAddError('')
   }
 
   if (loading) {
@@ -143,8 +227,9 @@ export default function ProductsTable() {
             + AGREGAR PRODUCTO
           </button>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <p className="text-gray-400 text-sm font-medium">Nuevo producto</p>
+
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
@@ -164,10 +249,17 @@ export default function ProductsTable() {
                 />
               </div>
             </div>
+
+            <div className="flex gap-3">
+              <ImageUploadSlot label="Imagen 1 (Frente)" file={img1} onChange={setImg1} />
+              <ImageUploadSlot label="Imagen 2 (Perfil)" file={img2} onChange={setImg2} />
+            </div>
+
             {newName && (
               <p className="text-gray-600 text-xs">Key generada: <span className="text-gray-400">{toKey(newName)}</span></p>
             )}
             {addError && <p className="text-red-400 text-sm">{addError}</p>}
+
             <div className="flex gap-3">
               <button
                 onClick={addProduct}
@@ -178,7 +270,7 @@ export default function ProductsTable() {
                 {adding ? 'AGREGANDO...' : 'AGREGAR'}
               </button>
               <button
-                onClick={() => { setShowForm(false); setNewName(''); setNewPrice(0); setAddError('') }}
+                onClick={resetForm}
                 className="text-gray-500 hover:text-white text-sm transition-colors px-2"
               >
                 Cancelar
