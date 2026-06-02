@@ -8,15 +8,16 @@ function toKey(name: string) {
 }
 
 function ImageUploadSlot({
-  label,
-  file,
-  onChange,
+  label, file, existingUrl, onChange,
 }: {
   label: string
   file: File | null
+  existingUrl?: string
   onChange: (f: File | null) => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
+  const preview = file ? URL.createObjectURL(file) : existingUrl
+
   return (
     <div className="flex-1">
       <p className="text-gray-500 text-xs mb-1">{label}</p>
@@ -24,13 +25,9 @@ function ImageUploadSlot({
         onClick={() => ref.current?.click()}
         className="relative border border-dashed border-[#333] hover:border-[#E8521A] rounded cursor-pointer transition-colors h-24 flex items-center justify-center bg-[#0f0f0f] overflow-hidden"
       >
-        {file ? (
+        {preview ? (
           <>
-            <img
-              src={URL.createObjectURL(file)}
-              alt={label}
-              className="h-full w-full object-contain"
-            />
+            <img src={preview} alt={label} className="h-full w-full object-contain" />
             <button
               type="button"
               onClick={e => { e.stopPropagation(); onChange(null) }}
@@ -40,7 +37,7 @@ function ImageUploadSlot({
             </button>
           </>
         ) : (
-          <span className="text-gray-600 text-xs text-center px-2">Hacé clic para subir imagen</span>
+          <span className="text-gray-600 text-xs text-center px-2">Hacé clic para subir</span>
         )}
         <input
           ref={ref}
@@ -54,20 +51,43 @@ function ImageUploadSlot({
   )
 }
 
+async function uploadImage(supabaseClient: typeof supabase, file: File, key: string, slot: 1 | 2): Promise<string | null> {
+  const ext = file.name.split('.').pop()
+  const path = `${key}-${slot}.${ext}`
+  const { error } = await supabaseClient.storage
+    .from('product-images')
+    .upload(path, file, { upsert: true })
+  if (error) return null
+  return supabaseClient.storage.from('product-images').getPublicUrl(path).data.publicUrl
+}
+
 export default function ProductsTable() {
-  const [rows, setRows]       = useState<Product[]>([])
-  const [saving, setSaving]   = useState(false)
-  const [saved, setSaved]     = useState(false)
+  const [rows, setRows]     = useState<Product[]>([])
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState(false)
 
-  const [showForm, setShowForm]   = useState(false)
-  const [newName, setNewName]     = useState('')
-  const [newPrice, setNewPrice]   = useState<number>(0)
-  const [img1, setImg1]           = useState<File | null>(null)
-  const [img2, setImg2]           = useState<File | null>(null)
-  const [adding, setAdding]       = useState(false)
-  const [addError, setAddError]   = useState('')
+  // Agregar producto
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newName, setNewName]   = useState('')
+  const [newPrice, setNewPrice] = useState<number>(0)
+  const [newImg1, setNewImg1]   = useState<File | null>(null)
+  const [newImg2, setNewImg2]   = useState<File | null>(null)
+  const [adding, setAdding]     = useState(false)
+  const [addError, setAddError] = useState('')
+
+  // Editar imágenes
+  const [editingKey, setEditingKey]   = useState<string | null>(null)
+  const [editImg1, setEditImg1]       = useState<File | null>(null)
+  const [editImg2, setEditImg2]       = useState<File | null>(null)
+  const [savingImgs, setSavingImgs]   = useState(false)
+  const [editImgError, setEditImgError] = useState('')
+  const [editImgSaved, setEditImgSaved] = useState(false)
+
+  // Eliminar
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     supabase
@@ -80,100 +100,89 @@ export default function ProductsTable() {
       })
   }, [])
 
+  // ── Guardar precios ──────────────────────────────────────────────
   const updatePrice = (key: string, price_unit: number) =>
     setRows(prev => prev.map(r => r.key === key ? { ...r, price_unit } : r))
 
   const saveAll = async () => {
-    setSaving(true)
-    setSaveError(false)
+    setSaving(true); setSaveError(false)
     let hasError = false
-
     for (const row of rows) {
-      const { error } = await supabase
-        .from('products')
-        .update({ price_unit: row.price_unit })
-        .eq('key', row.key)
+      const { error } = await supabase.from('products').update({ price_unit: row.price_unit }).eq('key', row.key)
       if (error) hasError = true
     }
-
     setSaving(false)
-    if (hasError) {
-      setSaveError(true)
-      setTimeout(() => setSaveError(false), 3000)
-    } else {
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    }
+    if (hasError) { setSaveError(true); setTimeout(() => setSaveError(false), 3000) }
+    else { setSaved(true); setTimeout(() => setSaved(false), 2500) }
   }
 
-  const uploadImage = async (file: File, key: string, slot: 1 | 2): Promise<string | null> => {
-    const ext = file.name.split('.').pop()
-    const path = `${key}-${slot}.${ext}`
-    const { error } = await supabase.storage
-      .from('product-images')
-      .upload(path, file, { upsert: true })
-    if (error) return null
-    const { data } = supabase.storage.from('product-images').getPublicUrl(path)
-    return data.publicUrl
-  }
-
+  // ── Agregar producto ─────────────────────────────────────────────
   const addProduct = async () => {
     setAddError('')
     const name = newName.trim().toUpperCase()
     if (!name) return setAddError('El nombre es obligatorio.')
     if (newPrice <= 0) return setAddError('El precio debe ser mayor a 0.')
-
     const key = toKey(newName)
-    if (rows.some(r => r.key === key)) return setAddError(`Ya existe un producto con key "${key}". Cambiá el nombre.`)
-
+    if (rows.some(r => r.key === key)) return setAddError(`Ya existe un producto con key "${key}".`)
     const nextOrder = rows.length > 0 ? Math.max(...rows.map(r => r.order)) + 1 : 1
 
     setAdding(true)
-
     const imageUrls: string[] = []
-    if (img1) {
-      const url = await uploadImage(img1, key, 1)
-      if (!url) { setAdding(false); return setAddError('Error al subir la imagen 1.') }
-      imageUrls.push(url)
-    }
-    if (img2) {
-      const url = await uploadImage(img2, key, 2)
-      if (!url) { setAdding(false); return setAddError('Error al subir la imagen 2.') }
-      imageUrls.push(url)
-    }
+    if (newImg1) { const u = await uploadImage(supabase, newImg1, key, 1); if (!u) { setAdding(false); return setAddError('Error al subir imagen 1.') } imageUrls.push(u) }
+    if (newImg2) { const u = await uploadImage(supabase, newImg2, key, 2); if (!u) { setAdding(false); return setAddError('Error al subir imagen 2.') } imageUrls.push(u) }
 
-    const { data, error } = await supabase
-      .from('products')
+    const { data, error } = await supabase.from('products')
       .insert({ key, name, price_unit: newPrice, order: nextOrder, tag: null, images: imageUrls })
-      .select()
-      .single()
+      .select().single()
 
     setAdding(false)
-    if (error || !data) {
-      setAddError(error?.message ?? 'No se pudo agregar el producto. Intentá de nuevo.')
-      return
-    }
-
+    if (error || !data) return setAddError(error?.message ?? 'No se pudo agregar el producto.')
     setRows(prev => [...prev, data])
-    setNewName('')
-    setNewPrice(0)
-    setImg1(null)
-    setImg2(null)
-    setShowForm(false)
+    setNewName(''); setNewPrice(0); setNewImg1(null); setNewImg2(null); setShowAddForm(false)
   }
 
-  const resetForm = () => {
-    setShowForm(false)
-    setNewName('')
-    setNewPrice(0)
-    setImg1(null)
-    setImg2(null)
-    setAddError('')
+  const resetAddForm = () => {
+    setShowAddForm(false); setNewName(''); setNewPrice(0)
+    setNewImg1(null); setNewImg2(null); setAddError('')
   }
 
-  if (loading) {
-    return <p className="text-gray-500 text-sm">Cargando productos...</p>
+  // ── Guardar imágenes de producto existente ───────────────────────
+  const openEditImages = (key: string) => {
+    setEditingKey(key); setEditImg1(null); setEditImg2(null)
+    setEditImgError(''); setEditImgSaved(false)
   }
+
+  const saveImages = async (row: Product) => {
+    setSavingImgs(true); setEditImgError('')
+    const currentUrls = row.images ?? []
+
+    let url1 = currentUrls[0] ?? null
+    let url2 = currentUrls[1] ?? null
+
+    if (editImg1) { const u = await uploadImage(supabase, editImg1, row.key, 1); if (!u) { setSavingImgs(false); return setEditImgError('Error al subir imagen 1.') } url1 = u }
+    if (editImg2) { const u = await uploadImage(supabase, editImg2, row.key, 2); if (!u) { setSavingImgs(false); return setEditImgError('Error al subir imagen 2.') } url2 = u }
+
+    const newImages = [url1, url2].filter(Boolean) as string[]
+    const { error } = await supabase.from('products').update({ images: newImages }).eq('key', row.key)
+    setSavingImgs(false)
+    if (error) return setEditImgError(error.message)
+
+    setRows(prev => prev.map(r => r.key === row.key ? { ...r, images: newImages } : r))
+    setEditImgSaved(true)
+    setTimeout(() => { setEditingKey(null); setEditImgSaved(false) }, 1500)
+  }
+
+  // ── Eliminar producto ────────────────────────────────────────────
+  const deleteProduct = async (key: string) => {
+    setDeleting(true)
+    const { error } = await supabase.from('products').delete().eq('key', key)
+    setDeleting(false)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
+    setRows(prev => prev.filter(r => r.key !== key))
+    setConfirmDeleteKey(null)
+  }
+
+  if (loading) return <p className="text-gray-500 text-sm">Cargando productos...</p>
 
   return (
     <div>
@@ -186,20 +195,94 @@ export default function ProductsTable() {
             <tr className="text-gray-500 border-b border-[#2a2a2a] text-left">
               <th className="pb-2 font-medium">Producto</th>
               <th className="pb-2 font-medium">Precio c/u</th>
+              <th className="pb-2 font-medium text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(row => (
-              <tr key={row.key} className="border-b border-[#1e1e1e]">
-                <td className="py-3 text-white pr-4">{row.name}</td>
-                <td className="py-3">
-                  <PriceInput
-                    value={row.price_unit}
-                    onChange={v => updatePrice(row.key, v)}
-                    disabled={saving}
-                  />
-                </td>
-              </tr>
+              <>
+                <tr key={row.key} className="border-b border-[#1e1e1e]">
+                  <td className="py-3 text-white pr-4">{row.name}</td>
+                  <td className="py-3">
+                    <PriceInput value={row.price_unit} onChange={v => updatePrice(row.key, v)} disabled={saving} />
+                  </td>
+                  <td className="py-3 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => editingKey === row.key ? setEditingKey(null) : openEditImages(row.key)}
+                      className={`text-xs mr-3 transition-colors ${editingKey === row.key ? 'text-[#E8521A]' : 'text-gray-500 hover:text-white'}`}
+                    >
+                      Imágenes
+                    </button>
+                    {confirmDeleteKey === row.key ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="text-gray-400 text-xs">¿Eliminar?</span>
+                        <button
+                          onClick={() => deleteProduct(row.key)}
+                          disabled={deleting}
+                          className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-40"
+                        >
+                          Sí
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteKey(null)}
+                          className="text-xs text-gray-500 hover:text-white transition-colors"
+                        >
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteKey(row.key)}
+                        className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                      >
+                        Eliminar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+
+                {/* Panel de edición de imágenes */}
+                {editingKey === row.key && (
+                  <tr key={`${row.key}-edit`} className="border-b border-[#1e1e1e] bg-[#141414]">
+                    <td colSpan={3} className="py-4 px-2">
+                      <div className="space-y-3">
+                        <p className="text-gray-400 text-xs font-medium">Imágenes de {row.name}</p>
+                        <div className="flex gap-3">
+                          <ImageUploadSlot
+                            label="Imagen 1 (Frente)"
+                            file={editImg1}
+                            existingUrl={row.images?.[0]}
+                            onChange={f => { setEditImg1(f); setEditImgError('') }}
+                          />
+                          <ImageUploadSlot
+                            label="Imagen 2 (Perfil)"
+                            file={editImg2}
+                            existingUrl={row.images?.[1]}
+                            onChange={f => { setEditImg2(f); setEditImgError('') }}
+                          />
+                        </div>
+                        {editImgError && <p className="text-red-400 text-xs">{editImgError}</p>}
+                        <div className="flex gap-3 items-center">
+                          <button
+                            onClick={() => saveImages(row)}
+                            disabled={savingImgs || (!editImg1 && !editImg2)}
+                            className="bg-[#E8521A] hover:bg-[#d44a16] text-white px-4 py-1.5 rounded font-bold text-xs
+                                       disabled:opacity-40 transition-colors tracking-wider"
+                          >
+                            {savingImgs ? 'GUARDANDO...' : editImgSaved ? 'GUARDADO ✓' : 'GUARDAR IMÁGENES'}
+                          </button>
+                          <button
+                            onClick={() => setEditingKey(null)}
+                            className="text-gray-500 hover:text-white text-xs transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>
@@ -219,9 +302,9 @@ export default function ProductsTable() {
 
       {/* Agregar producto */}
       <div className="mt-6 border-t border-[#2a2a2a] pt-5">
-        {!showForm ? (
+        {!showAddForm ? (
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => setShowAddForm(true)}
             className="text-[#E8521A] hover:text-[#d44a16] text-sm font-bold tracking-wider transition-colors"
           >
             + AGREGAR PRODUCTO
@@ -229,7 +312,6 @@ export default function ProductsTable() {
         ) : (
           <div className="space-y-4">
             <p className="text-gray-400 text-sm font-medium">Nuevo producto</p>
-
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
@@ -249,17 +331,14 @@ export default function ProductsTable() {
                 />
               </div>
             </div>
-
             <div className="flex gap-3">
-              <ImageUploadSlot label="Imagen 1 (Frente)" file={img1} onChange={setImg1} />
-              <ImageUploadSlot label="Imagen 2 (Perfil)" file={img2} onChange={setImg2} />
+              <ImageUploadSlot label="Imagen 1 (Frente)" file={newImg1} onChange={setNewImg1} />
+              <ImageUploadSlot label="Imagen 2 (Perfil)" file={newImg2} onChange={setNewImg2} />
             </div>
-
             {newName && (
               <p className="text-gray-600 text-xs">Key generada: <span className="text-gray-400">{toKey(newName)}</span></p>
             )}
             {addError && <p className="text-red-400 text-sm">{addError}</p>}
-
             <div className="flex gap-3">
               <button
                 onClick={addProduct}
@@ -269,10 +348,7 @@ export default function ProductsTable() {
               >
                 {adding ? 'AGREGANDO...' : 'AGREGAR'}
               </button>
-              <button
-                onClick={resetForm}
-                className="text-gray-500 hover:text-white text-sm transition-colors px-2"
-              >
+              <button onClick={resetAddForm} className="text-gray-500 hover:text-white text-sm transition-colors px-2">
                 Cancelar
               </button>
             </div>

@@ -4,6 +4,7 @@ export interface Product {
   price_unit: number
   tag: string | null
   order: number
+  images?: string[] | null
 }
 
 export interface Service {
