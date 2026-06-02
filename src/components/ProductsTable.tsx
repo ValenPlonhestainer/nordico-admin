@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import type { Product } from '../types'
 import PriceInput from './PriceInput'
@@ -200,8 +200,8 @@ export default function ProductsTable() {
           </thead>
           <tbody>
             {rows.map(row => (
-              <>
-                <tr key={row.key} className="border-b border-[#1e1e1e]">
+              <Fragment key={row.key}>
+                <tr className="border-b border-[#1e1e1e]">
                   <td className="py-3 text-white pr-4">{row.name}</td>
                   <td className="py-3">
                     <PriceInput value={row.price_unit} onChange={v => updatePrice(row.key, v)} disabled={saving} />
@@ -243,7 +243,7 @@ export default function ProductsTable() {
 
                 {/* Panel de edición de imágenes */}
                 {editingKey === row.key && (
-                  <tr key={`${row.key}-edit`} className="border-b border-[#1e1e1e] bg-[#141414]">
+                  <tr className="border-b border-[#1e1e1e] bg-[#141414]">
                     <td colSpan={3} className="py-4 px-2">
                       <div className="space-y-3">
                         <p className="text-gray-400 text-xs font-medium">Imágenes de {row.name}</p>
@@ -282,7 +282,7 @@ export default function ProductsTable() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
