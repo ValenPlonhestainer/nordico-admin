@@ -1,15 +1,24 @@
 import LoginGate from './components/LoginGate'
 import ProductsTable from './components/ProductsTable'
 import ServicesTable from './components/ServicesTable'
+import { supabase } from './lib/supabaseClient'
 
 export default function App() {
   return (
     <LoginGate>
       <div className="min-h-screen bg-[#0f0f0f] text-white">
         <header className="border-b border-[#1e1e1e] px-8 py-5 flex justify-center">
-          <div className="w-full max-w-3xl">
-            <p className="text-[#E8521A] text-xs font-bold tracking-widest mb-0.5">PANEL DE GESTIÓN</p>
-            <h1 className="text-xl font-bold tracking-widest">NORDICO</h1>
+          <div className="w-full max-w-3xl flex items-center justify-between">
+            <div>
+              <p className="text-[#E8521A] text-xs font-bold tracking-widest mb-0.5">PANEL DE GESTIÓN</p>
+              <h1 className="text-xl font-bold tracking-widest">NORDICO</h1>
+            </div>
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="text-gray-500 hover:text-white text-xs tracking-widest transition-colors"
+            >
+              SALIR
+            </button>
           </div>
         </header>
 
