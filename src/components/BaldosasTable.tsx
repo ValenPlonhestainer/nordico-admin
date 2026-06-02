@@ -51,14 +51,14 @@ function ImageUploadSlot({
   )
 }
 
-async function uploadImage(supabaseClient: typeof supabase, file: File, key: string, slot: 1 | 2): Promise<string | null> {
+async function uploadImage(supabaseClient: typeof supabase, file: File, key: string, slot: 1 | 2): Promise<{ url: string | null; error: string | null }> {
   const ext = file.name.split('.').pop()
-  const path = `baldosas/${key}-${slot}.${ext}`
+  const path = `baldosa-${key}-${slot}.${ext}`
   const { error } = await supabaseClient.storage
     .from('product-images')
     .upload(path, file, { upsert: true })
-  if (error) return null
-  return supabaseClient.storage.from('product-images').getPublicUrl(path).data.publicUrl
+  if (error) return { url: null, error: error.message }
+  return { url: supabaseClient.storage.from('product-images').getPublicUrl(path).data.publicUrl, error: null }
 }
 
 export default function BaldosasTable() {
@@ -131,8 +131,8 @@ export default function BaldosasTable() {
 
     setAdding(true)
     const imageUrls: string[] = []
-    if (newImg1) { const u = await uploadImage(supabase, newImg1, key, 1); if (!u) { setAdding(false); return setAddError('Error al subir imagen 1.') } imageUrls.push(u) }
-    if (newImg2) { const u = await uploadImage(supabase, newImg2, key, 2); if (!u) { setAdding(false); return setAddError('Error al subir imagen 2.') } imageUrls.push(u) }
+    if (newImg1) { const { url: u1, error: e1 } = await uploadImage(supabase, newImg1, key, 1); if (!u1) { setAdding(false); return setAddError(`Error al subir imagen 1: ${e1}`) } imageUrls.push(u1) }
+    if (newImg2) { const { url: u2, error: e2 } = await uploadImage(supabase, newImg2, key, 2); if (!u2) { setAdding(false); return setAddError(`Error al subir imagen 2: ${e2}`) } imageUrls.push(u2) }
 
     const { data, error } = await supabase.from('baldosas')
       .insert({ key, name, price_unit: newPrice, order: nextOrder, tag: null, images: imageUrls })
@@ -162,8 +162,8 @@ export default function BaldosasTable() {
     let url1 = currentUrls[0] ?? null
     let url2 = currentUrls[1] ?? null
 
-    if (editImg1) { const u = await uploadImage(supabase, editImg1, row.key, 1); if (!u) { setSavingImgs(false); return setEditImgError('Error al subir imagen 1.') } url1 = u }
-    if (editImg2) { const u = await uploadImage(supabase, editImg2, row.key, 2); if (!u) { setSavingImgs(false); return setEditImgError('Error al subir imagen 2.') } url2 = u }
+    if (editImg1) { const { url: u1, error: e1 } = await uploadImage(supabase, editImg1, row.key, 1); if (!u1) { setSavingImgs(false); return setEditImgError(`Error al subir imagen 1: ${e1}`) } url1 = u1 }
+    if (editImg2) { const { url: u2, error: e2 } = await uploadImage(supabase, editImg2, row.key, 2); if (!u2) { setSavingImgs(false); return setEditImgError(`Error al subir imagen 2: ${e2}`) } url2 = u2 }
 
     const newImages = [url1, url2].filter(Boolean) as string[]
     const { error } = await supabase.from('baldosas').update({ images: newImages }).eq('key', row.key)
