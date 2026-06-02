@@ -85,6 +85,9 @@ export default function ProductsTable() {
   const [editImgError, setEditImgError] = useState('')
   const [editImgSaved, setEditImgSaved] = useState(false)
 
+  // Reordenar
+  const [reordering, setReordering] = useState(false)
+
   // Eliminar
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -172,6 +175,31 @@ export default function ProductsTable() {
     setTimeout(() => { setEditingKey(null); setEditImgSaved(false) }, 1500)
   }
 
+  // ── Reordenar productos ──────────────────────────────────────────
+  const moveRow = async (index: number, direction: 'up' | 'down') => {
+    const swapIndex = direction === 'up' ? index - 1 : index + 1
+    if (swapIndex < 0 || swapIndex >= rows.length) return
+
+    setReordering(true)
+    const a = rows[index]
+    const b = rows[swapIndex]
+    const orderA = a.order
+    const orderB = b.order
+
+    await Promise.all([
+      supabase.from('products').update({ order: orderB }).eq('key', a.key),
+      supabase.from('products').update({ order: orderA }).eq('key', b.key),
+    ])
+
+    setRows(prev => {
+      const next = [...prev]
+      next[index]    = { ...a, order: orderB }
+      next[swapIndex] = { ...b, order: orderA }
+      return next.sort((x, y) => x.order - y.order)
+    })
+    setReordering(false)
+  }
+
   // ── Eliminar producto ────────────────────────────────────────────
   const deleteProduct = async (key: string) => {
     setDeleting(true)
@@ -199,10 +227,28 @@ export default function ProductsTable() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(row => (
+            {rows.map((row, index) => (
               <Fragment key={row.key}>
                 <tr className="border-b border-[#1e1e1e]">
-                  <td className="py-3 text-white pr-4">{row.name}</td>
+                  <td className="py-3 text-white pr-4">
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-col">
+                        <button
+                          onClick={() => moveRow(index, 'up')}
+                          disabled={reordering || index === 0}
+                          className="text-gray-600 hover:text-white disabled:opacity-20 disabled:cursor-default leading-none transition-colors text-xs"
+                          title="Subir"
+                        >▲</button>
+                        <button
+                          onClick={() => moveRow(index, 'down')}
+                          disabled={reordering || index === rows.length - 1}
+                          className="text-gray-600 hover:text-white disabled:opacity-20 disabled:cursor-default leading-none transition-colors text-xs"
+                          title="Bajar"
+                        >▼</button>
+                      </div>
+                      {row.name}
+                    </div>
+                  </td>
                   <td className="py-3">
                     <PriceInput value={row.price_unit} onChange={v => updatePrice(row.key, v)} disabled={saving} />
                   </td>
