@@ -1,3 +1,9 @@
+export interface ColorVariant {
+  name: string
+  color: string
+  images: string[]
+}
+
 export interface Product {
   key: string
   name: string
@@ -5,6 +11,7 @@ export interface Product {
   tag: string | null
   order: number
   images?: string[] | null
+  variants?: ColorVariant[] | null
 }
 
 export interface Service {

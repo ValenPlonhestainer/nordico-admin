@@ -1,7 +1,19 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import type { Product } from '../types'
+import type { Product, ColorVariant } from '../types'
 import PriceInput from './PriceInput'
+
+type EditVariant = {
+  name: string
+  color: string
+  img1Url: string | null
+  img1File: File | null
+  img2Url: string | null
+  img2File: File | null
+}
+
+const toColorSlug = (name: string) =>
+  name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'variante'
 
 function toKey(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
@@ -61,6 +73,16 @@ async function uploadImage(supabaseClient: typeof supabase, file: File, key: str
   return { url: supabaseClient.storage.from('product-images').getPublicUrl(path).data.publicUrl, error: null }
 }
 
+async function uploadVariantImage(supabaseClient: typeof supabase, file: File, key: string, colorSlug: string, slot: 1 | 2): Promise<{ url: string | null; error: string | null }> {
+  const ext = file.name.split('.').pop()
+  const path = `baldosa-${key}-${colorSlug}-${slot}.${ext}`
+  const { error } = await supabaseClient.storage
+    .from('product-images')
+    .upload(path, file, { upsert: true })
+  if (error) return { url: null, error: error.message }
+  return { url: supabaseClient.storage.from('product-images').getPublicUrl(path).data.publicUrl, error: null }
+}
+
 export default function BaldosasTable() {
   const [rows, setRows]     = useState<Product[]>([])
   const [saving, setSaving] = useState(false)
@@ -81,6 +103,7 @@ export default function BaldosasTable() {
   const [editingKey, setEditingKey]   = useState<string | null>(null)
   const [editImg1, setEditImg1]       = useState<File | null>(null)
   const [editImg2, setEditImg2]       = useState<File | null>(null)
+  const [editVariants, setEditVariants] = useState<EditVariant[]>([])
   const [savingImgs, setSavingImgs]   = useState(false)
   const [editImgError, setEditImgError] = useState('')
   const [editImgSaved, setEditImgSaved] = useState(false)
@@ -150,27 +173,59 @@ export default function BaldosasTable() {
   }
 
   // ── Guardar imágenes de baldosa existente ────────────────────────
-  const openEditImages = (key: string) => {
-    setEditingKey(key); setEditImg1(null); setEditImg2(null)
+  const openEditImages = (row: Product) => {
+    setEditingKey(row.key)
+    setEditImg1(null); setEditImg2(null)
     setEditImgError(''); setEditImgSaved(false)
+    setEditVariants(
+      (row.variants ?? []).map(v => ({
+        name: v.name,
+        color: v.color,
+        img1Url: v.images?.[0] ?? null,
+        img1File: null,
+        img2Url: v.images?.[1] ?? null,
+        img2File: null,
+      }))
+    )
   }
+
+  const addVariant = () =>
+    setEditVariants(prev => [...prev, { name: '', color: '#808080', img1Url: null, img1File: null, img2Url: null, img2File: null }])
+
+  const removeVariant = (vi: number) =>
+    setEditVariants(prev => prev.filter((_, i) => i !== vi))
+
+  const updateVariant = (vi: number, changes: Partial<EditVariant>) =>
+    setEditVariants(prev => prev.map((v, i) => i === vi ? { ...v, ...changes } : v))
 
   const saveImages = async (row: Product) => {
     setSavingImgs(true); setEditImgError('')
-    const currentUrls = row.images ?? []
 
+    // Imágenes base
+    const currentUrls = row.images ?? []
     let url1 = currentUrls[0] ?? null
     let url2 = currentUrls[1] ?? null
-
     if (editImg1) { const { url: u1, error: e1 } = await uploadImage(supabase, editImg1, row.key, 1); if (!u1) { setSavingImgs(false); return setEditImgError(`Error al subir imagen 1: ${e1}`) } url1 = u1 }
     if (editImg2) { const { url: u2, error: e2 } = await uploadImage(supabase, editImg2, row.key, 2); if (!u2) { setSavingImgs(false); return setEditImgError(`Error al subir imagen 2: ${e2}`) } url2 = u2 }
-
     const newImages = [url1, url2].filter(Boolean) as string[]
-    const { error } = await supabase.from('baldosas').update({ images: newImages }).eq('key', row.key)
+
+    // Variantes de color
+    const savedVariants: ColorVariant[] = []
+    for (let vi = 0; vi < editVariants.length; vi++) {
+      const v = editVariants[vi]
+      const slug = toColorSlug(v.name) || `variante${vi + 1}`
+      let img1Url = v.img1Url
+      let img2Url = v.img2Url
+      if (v.img1File) { const { url, error } = await uploadVariantImage(supabase, v.img1File, row.key, slug, 1); if (!url) { setSavingImgs(false); return setEditImgError(`Error en variante "${v.name}": ${error}`) } img1Url = url }
+      if (v.img2File) { const { url, error } = await uploadVariantImage(supabase, v.img2File, row.key, slug, 2); if (!url) { setSavingImgs(false); return setEditImgError(`Error en variante "${v.name}": ${error}`) } img2Url = url }
+      savedVariants.push({ name: v.name, color: v.color, images: [img1Url, img2Url].filter(Boolean) as string[] })
+    }
+
+    const { error } = await supabase.from('baldosas').update({ images: newImages, variants: savedVariants }).eq('key', row.key)
     setSavingImgs(false)
     if (error) return setEditImgError(error.message)
 
-    setRows(prev => prev.map(r => r.key === row.key ? { ...r, images: newImages } : r))
+    setRows(prev => prev.map(r => r.key === row.key ? { ...r, images: newImages, variants: savedVariants } : r))
     setEditImgSaved(true)
     setTimeout(() => { setEditingKey(null); setEditImgSaved(false) }, 1500)
   }
@@ -254,7 +309,7 @@ export default function BaldosasTable() {
                   </td>
                   <td className="py-3 text-right whitespace-nowrap">
                     <button
-                      onClick={() => editingKey === row.key ? setEditingKey(null) : openEditImages(row.key)}
+                      onClick={() => editingKey === row.key ? setEditingKey(null) : openEditImages(row)}
                       className={`text-xs mr-3 transition-colors ${editingKey === row.key ? 'text-[#E8521A]' : 'text-gray-500 hover:text-white'}`}
                     >
                       Imágenes
@@ -292,7 +347,7 @@ export default function BaldosasTable() {
                   <tr className="border-b border-[#1e1e1e] bg-[#141414]">
                     <td colSpan={3} className="py-4 px-2">
                       <div className="space-y-3">
-                        <p className="text-gray-400 text-xs font-medium">Imágenes de {row.name}</p>
+                        <p className="text-gray-400 text-xs font-medium">Imágenes base de {row.name}</p>
                         <div className="flex flex-col sm:flex-row gap-3">
                           <ImageUploadSlot
                             label="Imagen 1 (Frente)"
@@ -307,11 +362,65 @@ export default function BaldosasTable() {
                             onChange={f => { setEditImg2(f); setEditImgError('') }}
                           />
                         </div>
+
+                        {/* Variantes de color */}
+                        <div className="border-t border-[#2a2a2a] pt-3 mt-2">
+                          <p className="text-gray-400 text-xs font-medium mb-3">VARIANTES DE COLOR</p>
+                          {editVariants.map((variant, vi) => (
+                            <div key={vi} className="mb-4 p-3 border border-[#2a2a2a] rounded space-y-3">
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="text"
+                                  placeholder="Nombre del color (ej: Gris)"
+                                  value={variant.name}
+                                  onChange={e => updateVariant(vi, { name: e.target.value })}
+                                  className="flex-1 bg-[#0f0f0f] border border-[#333] focus:border-[#E8521A] text-white text-xs px-2 py-1.5 rounded outline-none transition-colors placeholder-gray-600"
+                                />
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    value={variant.color}
+                                    onChange={e => updateVariant(vi, { color: e.target.value })}
+                                    className="w-8 h-8 rounded cursor-pointer border border-[#333] bg-transparent p-0.5"
+                                    title="Elegí el color"
+                                  />
+                                  <span className="text-gray-600 text-xs font-mono">{variant.color}</span>
+                                </div>
+                                <button
+                                  onClick={() => removeVariant(vi)}
+                                  className="text-gray-600 hover:text-red-400 text-lg leading-none ml-auto transition-colors"
+                                  title="Eliminar variante"
+                                >×</button>
+                              </div>
+                              <div className="flex flex-col sm:flex-row gap-3">
+                                <ImageUploadSlot
+                                  label="Imagen 1"
+                                  file={variant.img1File}
+                                  existingUrl={variant.img1Url ?? undefined}
+                                  onChange={f => updateVariant(vi, { img1File: f })}
+                                />
+                                <ImageUploadSlot
+                                  label="Imagen 2"
+                                  file={variant.img2File}
+                                  existingUrl={variant.img2Url ?? undefined}
+                                  onChange={f => updateVariant(vi, { img2File: f })}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            onClick={addVariant}
+                            className="text-[#E8521A] hover:text-[#d44a16] text-xs font-bold tracking-wider transition-colors"
+                          >
+                            + AGREGAR VARIANTE
+                          </button>
+                        </div>
+
                         {editImgError && <p className="text-red-400 text-xs">{editImgError}</p>}
                         <div className="flex gap-3 items-center">
                           <button
                             onClick={() => saveImages(row)}
-                            disabled={savingImgs || (!editImg1 && !editImg2)}
+                            disabled={savingImgs}
                             className="bg-[#E8521A] hover:bg-[#d44a16] text-white px-4 py-1.5 rounded font-bold text-xs
                                        disabled:opacity-40 transition-colors tracking-wider"
                           >
