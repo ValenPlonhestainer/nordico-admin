@@ -293,7 +293,7 @@ export default function BaldosasTable() {
                     <td colSpan={3} className="py-4 px-2">
                       <div className="space-y-3">
                         <p className="text-gray-400 text-xs font-medium">Imágenes de {row.name}</p>
-                        <div className="flex gap-3">
+                        <div className="flex flex-col sm:flex-row gap-3">
                           <ImageUploadSlot
                             label="Imagen 1 (Frente)"
                             file={editImg1}
@@ -334,18 +334,6 @@ export default function BaldosasTable() {
         </table>
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          onClick={saveAll}
-          disabled={saving}
-          className="bg-[#E8521A] hover:bg-[#d44a16] text-white px-6 py-2 rounded font-bold text-sm
-                     disabled:opacity-40 transition-colors tracking-wider"
-        >
-          {saving ? 'GUARDANDO...' : saved ? 'GUARDADO ✓' : 'GUARDAR CAMBIOS'}
-        </button>
-        {saveError && <span className="text-red-400 text-sm">Error al guardar. Intentá de nuevo.</span>}
-      </div>
-
       {/* Agregar baldosa */}
       <div className="mt-6 border-t border-[#2a2a2a] pt-5">
         {!showAddForm ? (
@@ -377,7 +365,7 @@ export default function BaldosasTable() {
                 />
               </div>
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <ImageUploadSlot label="Imagen 1 (Frente)" file={newImg1} onChange={setNewImg1} />
               <ImageUploadSlot label="Imagen 2 (Perfil)" file={newImg2} onChange={setNewImg2} />
             </div>
@@ -400,6 +388,18 @@ export default function BaldosasTable() {
             </div>
           </div>
         )}
+      </div>
+
+      <div className="mt-6 border-t border-[#2a2a2a] pt-5 flex items-center gap-3">
+        <button
+          onClick={saveAll}
+          disabled={saving}
+          className="bg-[#E8521A] hover:bg-[#d44a16] text-white px-6 py-2 rounded font-bold text-sm
+                     disabled:opacity-40 transition-colors tracking-wider"
+        >
+          {saving ? 'GUARDANDO...' : saved ? 'GUARDADO ✓' : 'GUARDAR CAMBIOS'}
+        </button>
+        {saveError && <span className="text-red-400 text-sm">Error al guardar. Intentá de nuevo.</span>}
       </div>
     </div>
   )
